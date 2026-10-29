@@ -1,0 +1,97 @@
+ПРОМТ ДЛЯ ПЕРЕНОСА ПРОЕКТА В НОВЫЙ ЧАТ
+=======================================
+Скопируй ВЕСЬ текст ниже (от слова "НАЧАЛО" до слова "КОНЕЦ") в новое сообщение
+и, если лимиты позволяют, приложи файл cs2_analytics_bot_V105.zip к тому же сообщению.
+
+=== НАЧАЛО ===
+
+Ты продолжаешь работу над проектом CS2-бота. Ниже — полный перенос контекста из предыдущего чата.
+
+## ПРОЕКТ
+Telegram-бот аналитики CS2. Пользователь из России, Windows, новичок в серверах/Python,
+общение на русском простым языком. Тон фраз в бота — нейтральный.
+
+- ЭТАП 1 — готов: HLTV-сбор (матчи, винрейты карт, H2H) через Camoufox (persistent-профиль
+  hltv_profile, asyncio lock), rule-based прогноз (сила = 0.65*карты + 0.35*H2H,
+  confidence 52-88%), тёмные PNG-карточки (Pillow), меню aiogram 3, TTL-кэш
+  (матчи 3ч / карты 12ч / H2H 24ч), доступ по ALLOWED_USER_ID.
+- ЭТАП 2 — закрыт (пользователь подтвердил "насчет кефов вроде норм"): Пари (HTTP JSON,
+  факторы 921/923) + Винлайн (Camoufox DOM). ФОНБЕТ И БЕТБУМ ВЫКЛЮЧЕНЫ в V105:
+  Фонбет сменил API (не отвечает), Бетбум задушен антиботом. Код остался, выключены
+  через ODDS_ENABLED=pari,winline в .env.
+- ЭТАП 3 — готов (V104): value_model.py — edge/EV/флэт/¼Келли, сигналы в базе
+  (value_signals), история с ROI, отметка результатов кнопками ✅/❌.
+- ЭТАП 3.5 — СДЕЛАН В V105 (эта версия):
+  • sportsdata.py — новый слой внешних источников:
+    - PandaScore (ключ в .env PANDASCORE_TOKEN, проверен, работает):
+      /csgo/matches/upcoming + /csgo/matches/running (лайв, счёт серии, стримы).
+    - API-Sport (api.api-sport.ru/v2, ключи в .env APISPORT_TOKENS через запятую,
+      ротация KeyRotator: 401/403 — сон 1ч, 429 — 60с, локальный счётчик квоты
+      100/сутки): /v2/esports/matches/live и /v2/esports/matches. ВТОРОЙ КЛЮЧ
+      (6146d6d4-...) ОТВЕЧАЛ 401 — пользователь должен проверить его в кабинете
+      app.api-sport.ru; ротатор подхватит сам, если оживёт.
+    - Парная логика: PandaScore -> (пусто/ошибка) -> API-Sport; кросс-чек флагом
+      APISPORT_CROSSCHECK=1 (по умолчанию 0 — экономия квоты).
+    - Мэтчинг команд: norm_name+алиасы (odds_api) + RapidFuzz (fallback difflib),
+      защита от двусмысленностей ('Spirit' != 'Spirit Academy'), подтверждённые
+      пары хранятся в БД (entity_map).
+    - Единый формат матча: {uid, title, status, begin_at, begin_msk, tournament,
+      teams[{name,id,logo,sources}], series_score, current_game, games_total,
+      streams, sources, odds}.
+  • Быстрый путь списка матчей: collector.collect_matches_via_sources() —
+    PandaScore (~3 сек) + мэтчинг с HLTV-ID из базы; фоном параллельно идёт
+    HLTV-сверка (start_bg_hltv_refresh в bot.py). Fallback — старый HLTV-сбор.
+  • Кнопка 🔴 Лайв: sportsdata.get_live() -> список идущих матчей со счётом
+    серии/карты + трансляции (RU сверху), клик -> подробности (cb_live).
+  • Прогноз: карточка приходит сразу после карт/H2H, кефы БК догружаются ФОНОМ
+    (odds_followup отдельным сообщением). Карты двух команд собираются
+    ПАРАЛЛЕЛЬНО (2 страницы одного браузера).
+  • Фиксы: краш 'list' has no .values — predict._maps_as_dict + словари в
+    collector; двойной клик больше не пересобирает (перепроверка кэша после
+    входа в lock); matches.tournament колонка (для будущих Турниров).
+- ЭТАП 4/5 — todo (V106/V107): обложка списка с логотипами, кнопка «Турниры»
+  (tournament уже в базе), тон фраз, лайв-раунды через scorebot HLTV,
+  автосбор по расписанию, уведомления о стартующих матчах.
+
+## ФАЙЛЫ (в cs2_analytics_bot_V105.zip)
+config.py — .env-настройки, TTL, ODDS_ENABLED (по умолчанию pari,winline),
+            PANDASCORE_TOKEN, APISPORT_TOKENS, APISPORT_DAILY_LIMIT,
+            APISPORT_CROSSCHECK, MATCHES_SRC_TTL=10мин, LIVE_TTL=75с, FUZZY_MIN=87
+database.py — SQLite: teams, team_maps, matches (+tournament), h2h, odds,
+            value_signals, entity_map, meta
+hltv_api.py — парсеры HLTV (страницы /matches, stats/teams/maps, results)
+odds_api.py — кефы БК: fetch_pari/fetch_fonbet (HTTP), fetch_winline/fetch_betboom
+            (Camoufox), norm_name + ALIASES, дампы debug_odds/*.json
+sportsdata.py — источники+ротация+мэтчинг+unified+get_upcoming/get_live+diagnostics
+collector.py — collect_matches_via_sources, collect_matches_only, ensure_match_data
+            (параллельные карты+перепроверка кэша), ensure_maps/h2h/odds, odds_sweep
+predict.py — h2h_summary, odds_insights, predict_match (+_maps_as_dict защита)
+value_model.py — kelly_full, scan_matches (по кэшу), формат сигналов/истории
+cards.py — PNG: team_card, match_card, h2h_card (логотипы с HLTV CDN, кэш cache/logos)
+bot.py — aiogram 3: меню (Матчи/Лайв/VALUE/Команды/H2H/История/Обновить),
+        show_live/cb_live, cb_match (кефы фоном), start_bg_hltv_refresh
+test_odds.py + test_odds.bat — диагностика кефов БК
+test_datasources.py + test_datasources.bat — диагностика PandaScore/API-Sport/мэтчинга
+dump_report.py + dump_report.bat — сжатие debug_odds в текстовый отчёт
+install_bot.bat / install_camoufox.bat / run_bot.bat — установщики
+requirements.txt — +aiohttp, +rapidfuzz к прежним
+.env — TG_TOKEN, ALLOWED_USER_ID=7491411842, TZ_NAME=Europe/Moscow, HEADLESS=false,
+      ODDS_ENABLED=pari,winline, PANDASCORE_TOKEN=PKvw...EK5mI,
+      APISPORT_TOKENS=b07f...,6146... (второй 401!), APISPORT_CROSSCHECK=0
+
+## ПРОВЕРЕНО В ПЕСОЧНИЦЕ (28.10)
+- ключ PandaScore живой: upcoming 37 матчей, running с results/стримами;
+- API-Sport: ключ 1 — план «Тестовый» 100/сутки, услуги football/esports/...;
+  ключ 2 — 401 Unauthorized;
+- мэтчинг: 33/37 матчей сопоставились на реальном списке; тесты NAVI/Spirit OK;
+- все .py компилируются, все .bat чистый ASCII, bot.py импортируется с aiogram.
+
+## ПРАВИЛА РАБОТЫ
+- Русский язык, простые объяснения (пользователь новичок).
+- Все .bat — ТОЛЬКО ASCII (проверка байтами).
+- Пользователь всё запускает у себя; БК видны только с RU IP.
+- Артефакты — ZIP в /home/z/my-project/download/; инструкции текстом в чат.
+- Бот — аналитический инструмент; дисклеймер про риски ставок обязателен.
+- Перед отправкой: py_compile всех файлов + ASCII-проверка .bat.
+
+=== КОНЕЦ ===
